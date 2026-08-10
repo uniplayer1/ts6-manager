@@ -292,6 +292,10 @@ type Peer struct {
 	Started         bool
 	mu              sync.Mutex
 	stopSR          chan struct{}
+	// ICE candidates received before the remote answer was set. Pion rejects
+	// AddICECandidate with "remote description is not set" if it arrives first;
+	// we buffer them here and flush once SetRemoteDescription succeeds.
+	pendingICE      []webrtc.ICECandidateInit
 }
 
 type Sidecar struct {
@@ -818,10 +822,29 @@ func (s *Sidecar) SetAnswer(id, sdp string) error {
 		return nil
 	}
 
-	return peer.PC.SetRemoteDescription(webrtc.SessionDescription{
+	if err := peer.PC.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeAnswer,
 		SDP:  sdp,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Flush any ICE candidates that arrived before the answer (see
+	// AddICECandidate). Previously they were dropped with "remote description
+	// is not set" and the stream stayed black for viewers whose candidates
+	// raced ahead of the answer.
+	if len(peer.pendingICE) > 0 {
+		pending := peer.pendingICE
+		peer.pendingICE = nil
+		for _, init := range pending {
+			if err := peer.PC.AddICECandidate(init); err != nil {
+				debugf("[API] Failed to flush ICE candidate for peer %s: %v", id, err)
+			}
+		}
+		debugf("[API] Flushed %d buffered ICE candidates for peer %s", len(pending), id)
+	}
+
+	return nil
 }
 
 func (s *Sidecar) AddICECandidate(id string, candidate string, sdpMid string, sdpMLineIndex uint16) error {
@@ -832,11 +855,26 @@ func (s *Sidecar) AddICECandidate(id string, candidate string, sdpMid string, sd
 		return fmt.Errorf("peer %s not found", id)
 	}
 
-	return peer.PC.AddICECandidate(webrtc.ICECandidateInit{
+	init := webrtc.ICECandidateInit{
 		Candidate:     candidate,
 		SDPMid:        &sdpMid,
 		SDPMLineIndex: &sdpMLineIndex,
-	})
+	}
+
+	peer.mu.Lock()
+	defer peer.mu.Unlock()
+
+	// If the remote answer hasn't been applied yet, Pion rejects AddICECandidate
+	// with "remote description is not set". Buffer it and flush once
+	// SetRemoteDescription succeeds (in SetAnswer) — fixes the black screen
+	// caused by ICE candidates racing ahead of the answer.
+	if peer.PC.RemoteDescription() == nil {
+		peer.pendingICE = append(peer.pendingICE, init)
+		debugf("[API] Buffered ICE candidate for peer %s (answer not set yet, %d pending)", id, len(peer.pendingICE))
+		return nil
+	}
+
+	return peer.PC.AddICECandidate(init)
 }
 
 func (s *Sidecar) ClosePeer(id string) {
