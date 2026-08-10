@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, security-hardening]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -66,19 +67,47 @@ jobs:
         run: go vet ./...
 
   docker:
-    name: Build Docker images
+    name: Build and push Docker images
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        dockerfile: [Dockerfile.backend, Dockerfile.frontend, Dockerfile.sidecar]
+        include:
+          - dockerfile: Dockerfile.backend
+            name: backend
+          - dockerfile: Dockerfile.sidecar
+            name: sidecar
+          - dockerfile: Dockerfile.frontend
+            name: frontend
     steps:
       - uses: actions/checkout@v5
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build ${{ matrix.dockerfile }}
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for ${{ matrix.name }}
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/uniplayer1/ts6-manager
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ matrix.name }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+
+      - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: false
+          push: "${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}"
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
