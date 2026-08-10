@@ -6,8 +6,14 @@ WORKDIR /app
 
 # Copy everything at once to avoid BuildKit ordering bug on Windows
 FROM base AS build
+# Copy only the manifests the frontend needs so a workspace-wide install
+# doesn't compile the backend's native modules (@discordjs/opus, ssh2) that
+# need Python/build tools absent from node:22-slim.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/common/package.json  ./packages/common/
+COPY packages/frontend/package.json ./packages/frontend/
+RUN pnpm install --no-frozen-lockfile --filter @ts6/frontend... --filter @ts6/common
 COPY . .
-RUN pnpm install --no-frozen-lockfile
 RUN pnpm --filter @ts6/common run build
 RUN pnpm --filter @ts6/frontend run build
 
