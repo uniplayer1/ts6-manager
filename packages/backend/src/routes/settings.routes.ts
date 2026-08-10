@@ -87,7 +87,7 @@ const YT_PROXY_KEY = 'youtube.egressProxy';
 settingsRoutes.get('/yt-proxy', requireAdmin, async (req: Request, res: Response, next) => {
   try {
     const row = await req.app.locals.prisma.appSetting.findUnique({ where: { key: YT_PROXY_KEY } });
-    res.json({ proxyUrl: row?.value || '' });
+    res.json({ proxyUrl: getYtProxyUrl() ?? row?.value ?? '' });
   } catch (err) { next(err); }
 });
 

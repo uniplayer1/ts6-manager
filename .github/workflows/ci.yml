@@ -6,6 +6,12 @@ on:
     tags: ['v*']
   pull_request:
 
+# GITHUB_TOKEN needs write access to GHCR to push images (the docker job
+# publishes backend/sidecar/frontend to ghcr.io/uniplayer1/ts6-manager).
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   node:
     name: Lint, typecheck, test, build
