@@ -920,6 +920,13 @@ func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate in
 	if source != "" {
 		if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 			args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5")
+			// Route the network fetch through the proxy (e.g. gluetun/NordVPN)
+			// so YouTube doesn't 403 the datacenter IP. Must be an OPTION here,
+			// not an env var — ffmpeg 5.1.9 segfaults on HTTPS input when
+			// http_proxy/https_proxy env vars are set.
+			if proxy != "" {
+				args = append(args, "-http_proxy", proxy)
+			}
 		} else {
 			args = append(args, "-stream_loop", "-1")
 		}
@@ -995,14 +1002,6 @@ func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate in
 	cmd := exec.Command(getFfmpegPath(), args...)
 	cmd.Stdout = nil
 	cmd.Stderr = os.Stderr
-	if proxy != "" {
-		// Route ffmpeg's network fetch through the proxy (e.g. gluetun/NordVPN)
-		// — without it, YouTube 403s from a datacenter IP.
-		cmd.Env = append(os.Environ(),
-			"http_proxy="+proxy, "https_proxy="+proxy,
-			"HTTP_PROXY="+proxy, "HTTPS_PROXY="+proxy,
-		)
-	}
 	if err := cmd.Start(); err != nil {
 		log.Printf("[FFmpeg] Start error: %v", err)
 		return
