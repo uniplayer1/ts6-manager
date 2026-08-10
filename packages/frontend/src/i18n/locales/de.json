@@ -299,6 +299,16 @@
         "saving": "Wird gespeichert...",
         "toastSaved": "Egress-Proxy gespeichert",
         "toastSaveFailed": "Egress-Proxy konnte nicht gespeichert werden"
+      },
+      "videoDuration": {
+        "title": "Max. Videostream-Länge",
+        "description": "Maximale Länge (Sekunden) eines Videos, das über einen Musikbot gestreamt werden kann. Längere Videos werden vor dem Download abgelehnt.",
+        "maxSeconds": "Max. Sekunden",
+        "hint": "0 = unbegrenzt. Standard 900 (15 Min.).",
+        "save": "Speichern",
+        "saving": "Wird gespeichert...",
+        "toastSaved": "Max. Videolänge gespeichert",
+        "toastSaveFailed": "Max. Videolänge konnte nicht gespeichert werden"
       }
     },
     "discord": {

@@ -299,6 +299,16 @@
         "saving": "Enregistrement...",
         "toastSaved": "Proxy de sortie enregistré",
         "toastSaveFailed": "Échec de l'enregistrement du proxy de sortie"
+      },
+      "videoDuration": {
+        "title": "Longueur max du flux vidéo",
+        "description": "Longueur maximale (secondes) d'une vidéo pouvant être diffusée via un bot musical. Les vidéos plus longues sont rejetées avant le téléchargement.",
+        "maxSeconds": "Max secondes",
+        "hint": "0 = illimité. Défaut 900 (15 min).",
+        "save": "Enregistrer",
+        "saving": "Enregistrement...",
+        "toastSaved": "Longueur vidéo max enregistrée",
+        "toastSaveFailed": "Échec de l'enregistrement de la longueur vidéo max"
       }
     },
     "discord": {

@@ -845,6 +845,7 @@ function YouTubeTab() {
       </Card>
 
       <PlaylistImportLimitCard />
+      <VideoDurationLimitCard />
       <YtProxyCard />
     </div>
   );
@@ -895,6 +896,48 @@ function PlaylistImportLimitCard() {
 }
 
 // ─── YouTube yt-dlp Egress Proxy Card ────────────────────────
+
+function VideoDurationLimitCard() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['settings-limits'], queryFn: limitsApi.get });
+  const [dur, setDur] = useState(900);
+
+  const [seededData, setSeededData] = useState<typeof data>(undefined);
+  if (data && data !== seededData) {
+    setSeededData(data);
+    setDur(data.maxVideoDuration);
+  }
+
+  const save = useMutation({
+    mutationFn: () => limitsApi.update(data?.maxPlaylistImport ?? 50, dur),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings-limits'] });
+      toast.success(t('settings.youtube.videoDuration.toastSaved'));
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || t('settings.youtube.videoDuration.toastSaveFailed')),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-medium">{t('settings.youtube.videoDuration.title')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{t('settings.youtube.videoDuration.description')}</p>
+        <div className="flex items-center gap-3">
+          <Label className="text-xs w-40">{t('settings.youtube.videoDuration.maxSeconds')}</Label>
+          <Input className="h-8 text-xs w-24" type="number" min={0} max={86400} value={dur}
+            onChange={(e) => setDur(parseInt(e.target.value) || 0)} />
+        </div>
+        <p className="text-[10px] text-muted-foreground">{t('settings.youtube.videoDuration.hint')}</p>
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? t('settings.youtube.videoDuration.saving') : t('settings.youtube.videoDuration.save')}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function YtProxyCard() {
   const { t } = useTranslation();

@@ -8,6 +8,7 @@ import { generateIdentityAsync, restoreIdentity, type IdentityData } from './tsl
 import type { QueueItem } from './playlist/queue.js';
 import type { MusicCommandHandler } from './music-command-handler.js';
 import { decrypt, encrypt } from '../utils/crypto.js';
+import { loadMaxVideoDuration } from '../utils/app-settings.js';
 import { broadcastScoped } from '../ws/ws-broadcast.js';
 
 const PROGRESS_INTERVAL_MS = 1000;
@@ -79,6 +80,7 @@ export class VoiceBotManager extends EventEmitter {
     });
 
     console.log(`[VoiceBotManager] Loading ${dbBots.length} music bot(s)...`);
+    const maxVideoDuration = await loadMaxVideoDuration(this.prisma);
 
     for (const dbBot of dbBots) {
       let identity: IdentityData | undefined;
@@ -103,6 +105,7 @@ export class VoiceBotManager extends EventEmitter {
         sidecarBinaryPath: process.env.SIDECAR_BINARY_PATH,
         sidecarPort: (dbBot as any).sidecarPort ?? 9800,
         streamPreset: (dbBot as any).streamPreset ?? '720p',
+        maxVideoDuration,
       };
 
       const bot = this.createBotInstance(config);

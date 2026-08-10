@@ -10,7 +10,7 @@ import { StreamSignaling, type ActiveStream, type SignalingMessage } from './str
 import { SidecarClient } from './streaming/sidecar-client.js';
 import { SidecarProcess, type SidecarConfig } from './streaming/sidecar-process.js';
 import { STREAM_PRESETS, DEFAULT_PRESET, type VideoViewerInfo, type VideoStreamStatus } from './streaming/types.js';
-import { getCookieArgs, runYtDlp, assertSafeUrl, getYtProxyUrl } from './audio/youtube.js';
+import { getCookieArgs, runYtDlp, assertSafeUrl } from './audio/youtube.js';
 import { validateUrl } from '../utils/url-validator.js';
 
 /** Resolve a YouTube/yt-dlp-compatible URL to a direct stream URL */
@@ -23,7 +23,7 @@ import { validateUrl } from '../utils/url-validator.js';
  * The video is downloaded to a temp file in the music dir (a Docker volume).
  * Caller is responsible for cleaning up the file when the stream stops.
  */
-async function downloadVideoForStream(url: string, maxHeight: number = 720): Promise<string> {
+async function downloadVideoForStream(url: string, maxHeight: number = 720, maxDurationSec: number = 900): Promise<string> {
   assertSafeUrl(url);
 
   // Non-YouTube URLs go straight to the sidecar's ffmpeg (no download needed)
@@ -47,7 +47,7 @@ async function downloadVideoForStream(url: string, maxHeight: number = 720): Pro
     '--no-playlist',
     '--no-progress',
     '-o', tempPath,
-    '--match-filter', 'duration <= 900',  // 15 min max — protects the bot
+    '--match-filter', `duration <= ${maxDurationSec}`,  // max video length — protects the bot
     '--',  // nothing past this point is parsed as an option
     url,
   ], 10 * 60_000, { lowPriority: false });  // 10 min timeout for the download
@@ -81,6 +81,7 @@ export interface VoiceBotConfig {
   sidecarBinaryPath?: string;
   sidecarPort?: number;
   streamPreset?: string;
+  maxVideoDuration?: number;  // seconds; 0 = unlimited
 }
 
 export class VoiceBot extends EventEmitter {
@@ -140,6 +141,7 @@ export class VoiceBot extends EventEmitter {
   private _activeStreamId: string | null = null;
   private _videoSource: string | null = null;
   private _videoTempFile: string | null = null;  // downloaded stream file to clean up
+  private _maxVideoDuration: number = 900;
   private _videoPreset: string = DEFAULT_PRESET;
   private _videoFramerate: number = STREAM_PRESETS[DEFAULT_PRESET]?.framerate ?? 30;
   private _videoBitrate: string = STREAM_PRESETS[DEFAULT_PRESET]?.bitrate ?? '2500k';
@@ -148,6 +150,7 @@ export class VoiceBot extends EventEmitter {
 
   constructor(config: VoiceBotConfig) {
     super();
+    this._maxVideoDuration = config.maxVideoDuration ?? 900;
     this.config = config;
     this._originalNickname = config.nickname;
     this.client = new Ts3Client();
@@ -1007,7 +1010,7 @@ export class VoiceBot extends EventEmitter {
     this._videoStartedAt = Date.now();
 
     // Resolve YouTube/streaming URLs via yt-dlp, then start ffmpeg
-    const resolvedSource = await downloadVideoForStream(source, presetConfig.height);
+    const resolvedSource = await downloadVideoForStream(source, presetConfig.height, this._maxVideoDuration);
     if (!/^https?:\/\//.test(resolvedSource)) this._videoTempFile = resolvedSource;
     await this.sidecarHttp.setSource(
       resolvedSource,
@@ -1084,7 +1087,7 @@ export class VoiceBot extends EventEmitter {
     }
     this._videoSource = source;
     const currentPreset = STREAM_PRESETS[this._videoPreset] || STREAM_PRESETS[DEFAULT_PRESET];
-    const resolvedSource = await downloadVideoForStream(source, currentPreset.height);
+    const resolvedSource = await downloadVideoForStream(source, currentPreset.height, this._maxVideoDuration);
     if (!/^https?:\/\//.test(resolvedSource)) this._videoTempFile = resolvedSource;
 
     await this.sidecarHttp.setSource(

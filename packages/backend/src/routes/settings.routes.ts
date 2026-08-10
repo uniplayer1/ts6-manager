@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { AppError } from '../middleware/error-handler.js';
 import { setYtCookieFile, getYtCookieFile, setYtProxyUrl, getYtProxyUrl } from '../voice/audio/youtube.js';
-import { MAX_PLAYLIST_IMPORT_KEY, parseImportCap } from '../utils/app-settings.js';
+import { MAX_PLAYLIST_IMPORT_KEY, parseImportCap, MAX_VIDEO_DURATION_KEY, parseVideoDuration } from '../utils/app-settings.js';
 
 const settingsRoutes: Router = Router();
 
@@ -158,10 +158,11 @@ settingsRoutes.put('/proxy', requireAdmin, async (req: Request, res: Response, n
 // GET /limits — tunable ceilings
 settingsRoutes.get('/limits', requireAdmin, async (req: Request, res: Response, next) => {
   try {
-    const row = await req.app.locals.prisma.appSetting.findUnique({
-      where: { key: MAX_PLAYLIST_IMPORT_KEY },
-    });
-    res.json({ maxPlaylistImport: parseImportCap(row?.value) });
+    const [row, durRow] = await Promise.all([
+      req.app.locals.prisma.appSetting.findUnique({ where: { key: MAX_PLAYLIST_IMPORT_KEY } }),
+      req.app.locals.prisma.appSetting.findUnique({ where: { key: MAX_VIDEO_DURATION_KEY } }),
+    ]);
+    res.json({ maxPlaylistImport: parseImportCap(row?.value), maxVideoDuration: parseVideoDuration(durRow?.value) });
   } catch (err) { next(err); }
 });
 
@@ -178,7 +179,23 @@ settingsRoutes.put('/limits', requireAdmin, async (req: Request, res: Response, 
       update: { value: stored },
       create: { key: MAX_PLAYLIST_IMPORT_KEY, value: stored },
     });
-    res.json({ maxPlaylistImport: Math.floor(value) });
+
+    // Optional: max video stream duration (seconds)
+    let maxVideoDuration: number | undefined;
+    if (req.body?.maxVideoDuration !== undefined) {
+      const dur = Number(req.body.maxVideoDuration);
+      if (!Number.isFinite(dur) || dur < 0 || dur > 86400) {
+        throw new AppError(400, 'maxVideoDuration must be between 0 and 86400');
+      }
+      maxVideoDuration = Math.floor(dur);
+      await req.app.locals.prisma.appSetting.upsert({
+        where: { key: MAX_VIDEO_DURATION_KEY },
+        update: { value: String(maxVideoDuration) },
+        create: { key: MAX_VIDEO_DURATION_KEY, value: String(maxVideoDuration) },
+      });
+    }
+
+    res.json({ maxPlaylistImport: Math.floor(value), maxVideoDuration });
   } catch (err) { next(err); }
 });
 

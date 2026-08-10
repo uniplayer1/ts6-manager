@@ -299,6 +299,16 @@
         "saving": "Saving...",
         "toastSaved": "Egress proxy saved",
         "toastSaveFailed": "Failed to save the egress proxy"
+      },
+      "videoDuration": {
+        "title": "Max video stream length",
+        "description": "Maximum length (seconds) of a video that can be streamed through a music bot. Longer videos are rejected before download.",
+        "maxSeconds": "Max seconds",
+        "hint": "0 = unlimited. Default 900 (15 min).",
+        "save": "Save",
+        "saving": "Saving...",
+        "toastSaved": "Max video length saved",
+        "toastSaveFailed": "Failed to save the max video length"
       }
     },
     "discord": {

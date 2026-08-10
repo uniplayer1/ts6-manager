@@ -299,6 +299,16 @@
         "saving": "Salvataggio...",
         "toastSaved": "Proxy di uscita salvato",
         "toastSaveFailed": "Impossibile salvare il proxy di uscita"
+      },
+      "videoDuration": {
+        "title": "Lunghezza massima dello streaming video",
+        "description": "Lunghezza massima (secondi) di un video che può essere trasmesso tramite un bot musicale. I video più lunghi vengono rifiutati prima del download.",
+        "maxSeconds": "Max secondi",
+        "hint": "0 = illimitato. Predefinito 900 (15 min).",
+        "save": "Salva",
+        "saving": "Salvataggio...",
+        "toastSaved": "Lunghezza massima video salvata",
+        "toastSaveFailed": "Impossibile salvare la lunghezza massima video"
       }
     },
     "discord": {

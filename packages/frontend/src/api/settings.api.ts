@@ -31,8 +31,8 @@ export const proxyApi = {
 };
 
 export const limitsApi = {
-  get: (): Promise<{ maxPlaylistImport: number }> =>
+  get: (): Promise<{ maxPlaylistImport: number; maxVideoDuration: number }> =>
     api.get('/settings/limits').then((r) => r.data),
-  update: (maxPlaylistImport: number) =>
-    api.put('/settings/limits', { maxPlaylistImport }).then((r) => r.data),
+  update: (maxPlaylistImport: number, maxVideoDuration?: number) =>
+    api.put('/settings/limits', { maxPlaylistImport, maxVideoDuration }).then((r) => r.data),
 };
