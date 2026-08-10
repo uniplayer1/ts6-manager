@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { EventEmitter } from 'events';
 import { randomBytes } from 'crypto';
 import { Ts3Client, type Ts3ClientOptions, generateIdentity, type IdentityData, buildCommand } from './tslib/index.js';
@@ -12,13 +14,20 @@ import { getCookieArgs, runYtDlp, assertSafeUrl, getYtProxyUrl } from './audio/y
 import { validateUrl } from '../utils/url-validator.js';
 
 /** Resolve a YouTube/yt-dlp-compatible URL to a direct stream URL */
-async function resolveVideoUrl(url: string, maxHeight: number = 720): Promise<string> {
+/**
+ * Download a video for streaming via yt-dlp (through the proxy if configured)
+ * to a temp file, then return the local path. The sidecar's ffmpeg reads the
+ * local file — no proxy needed for ffmpeg (it ignores http/https proxy settings
+ * for HTTPS input, so we can't pass it the googlevideo URL directly).
+ *
+ * The video is downloaded to a temp file in the music dir (a Docker volume).
+ * Caller is responsible for cleaning up the file when the stream stops.
+ */
+async function downloadVideoForStream(url: string, maxHeight: number = 720): Promise<string> {
   assertSafeUrl(url);
 
-  // Only resolve YouTube and other yt-dlp-supported sites
+  // Non-YouTube URLs go straight to the sidecar's ffmpeg (no download needed)
   if (!url.includes('youtube.com/') && !url.includes('youtu.be/') && !url.includes('twitch.tv/')) {
-    // Anything else goes straight to the sidecar's ffmpeg, so apply the same
-    // SSRF guard the radio path uses before handing a URL to a fetcher.
     const check = await validateUrl(url, { allowedProtocols: ['http:', 'https:'] });
     if (!check.valid) {
       throw new Error(`Video source blocked: ${check.error}`);
@@ -26,26 +35,28 @@ async function resolveVideoUrl(url: string, maxHeight: number = 720): Promise<st
     return url;
   }
 
-  // Request best combined format (video+audio) up to the target height.
-  // runYtDlp adds the cookie args' siblings (timeout, full stderr logging);
-  // normal CPU priority — the user is waiting for the stream to start.
+  // Download best combined format (video+audio) up to the target height.
+  // The proxy (if set via YT_PROXY_URL) is included in getCookieArgs().
   const formatFilter = `best[height<=${maxHeight}][ext=mp4]/best[height<=${maxHeight}]/best[ext=mp4]/best`;
-  const stdout = await runYtDlp([
+  const tempPath = path.join(process.env.MUSIC_DIR || '/data/music', `.stream-${Date.now()}.mp4`);
+
+  console.log(`[VideoDownload] Downloading ${url.substring(0, 60)}... → ${tempPath}`);
+  await runYtDlp([
     ...getCookieArgs(),
     '-f', formatFilter,
     '--no-playlist',
-    '-g',  // print direct URL only
+    '--no-progress',
+    '-o', tempPath,
+    '--match-filter', 'duration <= 900',  // 15 min max — protects the bot
     '--',  // nothing past this point is parsed as an option
     url,
-  ], 60_000, { lowPriority: false });
+  ], 10 * 60_000, { lowPriority: false });  // 10 min timeout for the download
 
-  // yt-dlp -g returns the direct URL(s), take the first one
-  const directUrl = stdout.trim().split('\n')[0];
-  if (!directUrl) {
-    throw new Error('yt-dlp returned no URL');
+  if (!fs.existsSync(tempPath)) {
+    throw new Error('yt-dlp completed but the output file was not found');
   }
-  console.log(`[VideoResolve] Resolved: ${url.substring(0, 60)}... → direct URL`);
-  return directUrl;
+  console.log(`[VideoDownload] Downloaded: ${tempPath} (${fs.statSync(tempPath).size} bytes)`);
+  return tempPath;
 }
 
 export type VoiceBotStatus = 'stopped' | 'starting' | 'connected' | 'playing' | 'paused' | 'error';
@@ -128,6 +139,7 @@ export class VoiceBot extends EventEmitter {
   private _videoStreaming: boolean = false;
   private _activeStreamId: string | null = null;
   private _videoSource: string | null = null;
+  private _videoTempFile: string | null = null;  // downloaded stream file to clean up
   private _videoPreset: string = DEFAULT_PRESET;
   private _videoFramerate: number = STREAM_PRESETS[DEFAULT_PRESET]?.framerate ?? 30;
   private _videoBitrate: string = STREAM_PRESETS[DEFAULT_PRESET]?.bitrate ?? '2500k';
@@ -941,6 +953,7 @@ export class VoiceBot extends EventEmitter {
           this._videoStreaming = false;
           this._activeStreamId = null;
           this._viewers.clear();
+          this.cleanupVideoTempFile();
           this.emit('videoStreamStopped');
           this.emit('statusChange', this._status);
         }
@@ -994,14 +1007,14 @@ export class VoiceBot extends EventEmitter {
     this._videoStartedAt = Date.now();
 
     // Resolve YouTube/streaming URLs via yt-dlp, then start ffmpeg
-    const resolvedSource = await resolveVideoUrl(source, presetConfig.height);
+    const resolvedSource = await downloadVideoForStream(source, presetConfig.height);
+    if (!/^https?:\/\//.test(resolvedSource)) this._videoTempFile = resolvedSource;
     await this.sidecarHttp.setSource(
       resolvedSource,
       presetConfig.width,
       presetConfig.height,
       effectiveFramerate,
       effectiveBitrate,
-      getYtProxyUrl() || undefined,
     );
 
     console.log(`[VoiceBot ${this.config.id}] Video stream started: ${stream.id}, source: ${source}`);
@@ -1010,6 +1023,14 @@ export class VoiceBot extends EventEmitter {
   }
 
   /** Stop video streaming */
+  /** Remove the downloaded stream temp file (if any). */
+  private cleanupVideoTempFile(): void {
+    if (this._videoTempFile) {
+      try { fs.unlinkSync(this._videoTempFile); } catch { /* ignore */ }
+      this._videoTempFile = null;
+    }
+  }
+
   async stopVideoStream(): Promise<void> {
     if (!this._videoStreaming) return;
 
@@ -1046,6 +1067,8 @@ export class VoiceBot extends EventEmitter {
     this._videoSource = null;
     this._videoStreaming = false;
     this._videoStartedAt = null;
+    // Remove the downloaded temp stream file (if any)
+    this.cleanupVideoTempFile();
     this.signaling?.dispose();
     this.signaling = null;
 
@@ -1061,7 +1084,8 @@ export class VoiceBot extends EventEmitter {
     }
     this._videoSource = source;
     const currentPreset = STREAM_PRESETS[this._videoPreset] || STREAM_PRESETS[DEFAULT_PRESET];
-    const resolvedSource = await resolveVideoUrl(source, currentPreset.height);
+    const resolvedSource = await downloadVideoForStream(source, currentPreset.height);
+    if (!/^https?:\/\//.test(resolvedSource)) this._videoTempFile = resolvedSource;
 
     await this.sidecarHttp.setSource(
       resolvedSource,
@@ -1069,7 +1093,6 @@ export class VoiceBot extends EventEmitter {
       currentPreset.height,
       this._videoFramerate,
       this._videoBitrate,
-      getYtProxyUrl() || undefined,
     );
     console.log(`[VoiceBot ${this.config.id}] Video source changed: ${source}`);
     this.emit('videoSourceChanged', source);

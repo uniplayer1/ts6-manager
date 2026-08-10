@@ -920,13 +920,6 @@ func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate in
 	if source != "" {
 		if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 			args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5")
-			// Route the network fetch through the proxy (e.g. gluetun/NordVPN)
-			// so YouTube doesn't 403 the datacenter IP. Must be an OPTION here,
-			// not an env var — ffmpeg 5.1.9 segfaults on HTTPS input when
-			// http_proxy/https_proxy env vars are set.
-			if proxy != "" {
-				args = append(args, "-http_proxy", proxy)
-			}
 		} else {
 			args = append(args, "-stream_loop", "-1")
 		}
@@ -1002,6 +995,17 @@ func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate in
 	cmd := exec.Command(getFfmpegPath(), args...)
 	cmd.Stdout = nil
 	cmd.Stderr = os.Stderr
+	// Route ffmpeg's network fetch (https sources) through the proxy
+	// (e.g. gluetun/NordVPN) so YouTube doesn't 403 the datacenter IP.
+	// ffmpeg ignores the -http_proxy OPTION for https input, but DOES honor
+	// the http_proxy/https_proxy ENV VARS. (The env-var segfault was specific
+	// to ffmpeg 5.1.9 — the Alpine 6.1.2 build handles them fine.)
+	if proxy != "" {
+		cmd.Env = append(os.Environ(),
+			"http_proxy="+proxy, "https_proxy="+proxy,
+			"HTTP_PROXY="+proxy, "HTTPS_PROXY="+proxy,
+		)
+	}
 	if err := cmd.Start(); err != nil {
 		log.Printf("[FFmpeg] Start error: %v", err)
 		return
@@ -1077,6 +1081,13 @@ func validSource(source string) bool {
 	}
 	if strings.HasPrefix(source, "-") {
 		return false
+	}
+	// Local file paths are allowed ONLY under the music dir (where the backend
+	// writes downloaded stream temp files). This keeps the SSRF/file-relay
+	// guard while letting ffmpeg read a locally-downloaded video.
+	if strings.HasPrefix(source, "/") {
+		musicDir := envOrDefault("MUSIC_DIR", "/data/music")
+		return strings.HasPrefix(source, musicDir)
 	}
 	if !strings.HasPrefix(source, "http://") && !strings.HasPrefix(source, "https://") {
 		return false
@@ -1227,7 +1238,7 @@ func main() {
 			http.Error(w, "invalid dimensions", 400)
 			return
 		}
-		log.Printf("[API] Setting source: %s (%dx%d @ %dfps, bitrate=%s)", req.Source, req.Width, req.Height, req.Framerate, req.Bitrate)
+		log.Printf("[API] Setting source: %s (%dx%d @ %dfps, bitrate=%s, proxy=%s)", req.Source, req.Width, req.Height, req.Framerate, req.Bitrate, req.Proxy)
 		sidecar.StartFFmpeg(req.Source, req.Width, req.Height, req.Framerate, req.Bitrate, req.Proxy)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})

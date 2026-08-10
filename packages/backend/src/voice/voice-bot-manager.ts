@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { EventEmitter } from 'events';
 import type { PrismaClient } from '../../generated/prisma/index.js';
 import type { WebSocketServer } from 'ws';
@@ -62,6 +64,16 @@ export class VoiceBotManager extends EventEmitter {
   }
 
   async start(): Promise<void> {
+    // Sweep any orphaned stream temp files left by a crash mid-stream
+    try {
+      const musicDir = process.env.MUSIC_DIR || '/data/music';
+      const stale = fs.readdirSync(musicDir).filter((f) => f.startsWith('.stream-'));
+      for (const f of stale) {
+        try { fs.unlinkSync(path.join(musicDir, f)); } catch { /* ignore */ }
+      }
+      if (stale.length) console.log(`[VoiceBotManager] Cleaned up ${stale.length} stale stream temp file(s)`);
+    } catch { /* music dir may not exist yet */ }
+
     const dbBots = await this.prisma.musicBot.findMany({
       include: { serverConfig: true },
     });
