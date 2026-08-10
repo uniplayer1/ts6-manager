@@ -9,9 +9,18 @@ import { decrypt, encrypt } from '../utils/crypto.js';
 import { broadcastScoped } from '../ws/ws-broadcast.js';
 
 const PROGRESS_INTERVAL_MS = 1000;
-const MAX_RECONNECT_ATTEMPTS = 10;
-const MAX_RECONNECT_DELAY_MS = 30000;
-const RECONNECT_GRACE_PERIOD_MS = 5000;
+
+// Reconnect backoff is env-tunable so a restart doesn't trip the TeamSpeak
+// anti-flood ban: rapid connect/disconnect cycles rack up flood points and
+// get the bot banned (error 3329). Slower backoff + longer grace = safer.
+//   BOT_RECONNECT_ATTEMPTS   how many tries before giving up (default 5)
+//   BOT_RECONNECT_BASE_MS    first delay (default 10000 = 10s)
+//   BOT_RECONNECT_MAX_MS     backoff cap (default 60000)
+//   BOT_RECONNECT_GRACE_MS   pause after disconnect before reconnecting
+const MAX_RECONNECT_ATTEMPTS = parseInt(process.env.BOT_RECONNECT_ATTEMPTS || '5', 10);
+const RECONNECT_BASE_DELAY_MS = parseInt(process.env.BOT_RECONNECT_BASE_MS || '10000', 10);
+const MAX_RECONNECT_DELAY_MS = parseInt(process.env.BOT_RECONNECT_MAX_MS || '60000', 10);
+const RECONNECT_GRACE_PERIOD_MS = parseInt(process.env.BOT_RECONNECT_GRACE_MS || '10000', 10);
 
 interface ReconnectState {
   attempts: number;
@@ -349,7 +358,7 @@ export class VoiceBotManager extends EventEmitter {
       return;
     }
 
-    const delay = Math.min(Math.pow(2, state.attempts) * 1000, MAX_RECONNECT_DELAY_MS);
+    const delay = Math.min(Math.pow(2, state.attempts - 1) * RECONNECT_BASE_DELAY_MS, MAX_RECONNECT_DELAY_MS);
     state.attempts++;
     console.log(`[VoiceBotManager] Bot ${botId}: reconnect attempt ${state.attempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay / 1000}s`);
 
