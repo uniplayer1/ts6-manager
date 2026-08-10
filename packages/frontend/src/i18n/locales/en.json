@@ -289,6 +289,16 @@
         "saving": "Saving...",
         "toastSaved": "Import limit saved",
         "toastSaveFailed": "Failed to save the import limit"
+      },
+      "ytProxy": {
+        "title": "Egress proxy (gluetun / NordVPN)",
+        "description": "HTTP/SOCKS proxy for yt-dlp downloads and video streams (e.g. http://gluetun:8888 to exit via NordVPN). Fixes YouTube 403/blocked from a datacenter IP.",
+        "url": "Proxy URL",
+        "hint": "Leave empty to disable. Supports http://, https://, socks4://, socks5:// and socks5h://.",
+        "save": "Save",
+        "saving": "Saving...",
+        "toastSaved": "Egress proxy saved",
+        "toastSaveFailed": "Failed to save the egress proxy"
       }
     },
     "discord": {

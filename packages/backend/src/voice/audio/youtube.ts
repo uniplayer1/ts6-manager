@@ -35,7 +35,22 @@ export function getCookieArgs(): string[] {
   if (ytCookieFile) {
     args.push("--cookies", ytCookieFile);
   }
+  if (ytProxyUrl) {
+    args.push("--proxy", ytProxyUrl);
+  }
   return args;
+}
+
+// Optional HTTP proxy for yt-dlp (e.g. gluetun/NordVPN at http://gluetun:8888).
+// Set from the Settings UI or YT_PROXY_URL; fixes YouTube 403 on datacenter IPs.
+let ytProxyUrl: string | null = null;
+
+export function setYtProxyUrl(url: string | null): void {
+  ytProxyUrl = url && url.trim() ? url.trim() : null;
+}
+
+export function getYtProxyUrl(): string | null {
+  return ytProxyUrl;
 }
 
 /**

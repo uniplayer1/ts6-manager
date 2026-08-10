@@ -15,6 +15,12 @@ export const settingsApi = {
     api.post('/settings/yt-cookies', { text }).then((r) => r.data),
 
   deleteYtCookies: () => api.delete('/settings/yt-cookies').then((r) => r.data),
+
+  getYtProxy: (): Promise<{ proxyUrl: string }> =>
+    api.get('/settings/yt-proxy').then((r) => r.data),
+
+  setYtProxy: (proxyUrl: string) =>
+    api.put('/settings/yt-proxy', { proxyUrl }).then((r) => r.data),
 };
 
 export const proxyApi = {

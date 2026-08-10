@@ -13,7 +13,7 @@ import { ConnectionJournal } from './connection-journal.js';
 import { applyTrustProxy, loadTrustProxy } from './routes/settings.routes.js';
 import { loadSamlRuntime } from './auth/saml/saml-config.js';
 import { config } from './config.js';
-import { setYtCookieFile } from './voice/audio/youtube.js';
+import { setYtCookieFile, setYtProxyUrl } from './voice/audio/youtube.js';
 import { PlaylistImporter } from './voice/playlist-import.js';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
@@ -54,6 +54,25 @@ async function main() {
   }
 
   const prisma = new PrismaClient();
+
+  // yt-dlp egress proxy (gluetun/NordVPN): YT_PROXY_URL env wins, else the
+  // value saved in the Settings UI (read once here; the routes update live).
+  const envProxy = (process.env.YT_PROXY_URL || '').trim();
+  if (envProxy) {
+    setYtProxyUrl(envProxy);
+    console.log(`[yt-dlp] egress proxy (env): ${envProxy}`);
+  } else {
+    try {
+      const row = await prisma.appSetting.findUnique({ where: { key: 'youtube.egressProxy' } });
+      if (row?.value) {
+        setYtProxyUrl(row.value);
+        console.log(`[yt-dlp] egress proxy (setting): ${row.value}`);
+      }
+    } catch {
+      // DB not ready yet — leave unset; the Settings UI can set it later.
+    }
+  }
+
   const app = createApp();
   const server = createServer(app);
 

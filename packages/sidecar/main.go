@@ -888,7 +888,7 @@ func (s *Sidecar) ClosePeer(id string) {
 	s.peersLock.Unlock()
 }
 
-func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate int, bitrate string) {
+func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate int, bitrate string, proxy string) {
 	s.ffmpegLock.Lock()
 	defer s.ffmpegLock.Unlock()
 
@@ -995,6 +995,14 @@ func (s *Sidecar) StartFFmpeg(source string, width int, height int, framerate in
 	cmd := exec.Command(getFfmpegPath(), args...)
 	cmd.Stdout = nil
 	cmd.Stderr = os.Stderr
+	if proxy != "" {
+		// Route ffmpeg's network fetch through the proxy (e.g. gluetun/NordVPN)
+		// — without it, YouTube 403s from a datacenter IP.
+		cmd.Env = append(os.Environ(),
+			"http_proxy="+proxy, "https_proxy="+proxy,
+			"HTTP_PROXY="+proxy, "HTTPS_PROXY="+proxy,
+		)
+	}
 	if err := cmd.Start(); err != nil {
 		log.Printf("[FFmpeg] Start error: %v", err)
 		return
@@ -1201,7 +1209,8 @@ func main() {
 			Width     int    `json:"width"`
 			Height    int    `json:"height"`
 			Framerate int    `json:"framerate"`
-			Bitrate   string `json:"bitrate"` 
+			Bitrate   string `json:"bitrate"`
+			Proxy     string `json:"proxy"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), 400)
@@ -1220,7 +1229,7 @@ func main() {
 			return
 		}
 		log.Printf("[API] Setting source: %s (%dx%d @ %dfps, bitrate=%s)", req.Source, req.Width, req.Height, req.Framerate, req.Bitrate)
-		sidecar.StartFFmpeg(req.Source, req.Width, req.Height, req.Framerate, req.Bitrate)
+		sidecar.StartFFmpeg(req.Source, req.Width, req.Height, req.Framerate, req.Bitrate, req.Proxy)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 

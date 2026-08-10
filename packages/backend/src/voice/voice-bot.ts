@@ -8,7 +8,7 @@ import { StreamSignaling, type ActiveStream, type SignalingMessage } from './str
 import { SidecarClient } from './streaming/sidecar-client.js';
 import { SidecarProcess, type SidecarConfig } from './streaming/sidecar-process.js';
 import { STREAM_PRESETS, DEFAULT_PRESET, type VideoViewerInfo, type VideoStreamStatus } from './streaming/types.js';
-import { getCookieArgs, runYtDlp, assertSafeUrl } from './audio/youtube.js';
+import { getCookieArgs, runYtDlp, assertSafeUrl, getYtProxyUrl } from './audio/youtube.js';
 import { validateUrl } from '../utils/url-validator.js';
 
 /** Resolve a YouTube/yt-dlp-compatible URL to a direct stream URL */
@@ -1001,6 +1001,7 @@ export class VoiceBot extends EventEmitter {
       presetConfig.height,
       effectiveFramerate,
       effectiveBitrate,
+      getYtProxyUrl() || undefined,
     );
 
     console.log(`[VoiceBot ${this.config.id}] Video stream started: ${stream.id}, source: ${source}`);
@@ -1068,6 +1069,7 @@ export class VoiceBot extends EventEmitter {
       currentPreset.height,
       this._videoFramerate,
       this._videoBitrate,
+      getYtProxyUrl() || undefined,
     );
     console.log(`[VoiceBot ${this.config.id}] Video source changed: ${source}`);
     this.emit('videoSourceChanged', source);

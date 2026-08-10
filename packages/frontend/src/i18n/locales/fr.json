@@ -289,6 +289,16 @@
         "saving": "Enregistrement...",
         "toastSaved": "Limite d'import enregistrée",
         "toastSaveFailed": "Échec de l'enregistrement de la limite d'import"
+      },
+      "ytProxy": {
+        "title": "Proxy de sortie (gluetun / NordVPN)",
+        "description": "Proxy HTTP/SOCKS pour les téléchargements yt-dlp et les flux vidéo (ex. http://gluetun:8888 pour sortir via NordVPN). Corrige YouTube 403/bloqué depuis une IP de datacenter.",
+        "url": "URL du proxy",
+        "hint": "Laisser vide pour désactiver. Prend en charge http://, https://, socks4://, socks5:// et socks5h://.",
+        "save": "Enregistrer",
+        "saving": "Enregistrement...",
+        "toastSaved": "Proxy de sortie enregistré",
+        "toastSaveFailed": "Échec de l'enregistrement du proxy de sortie"
       }
     },
     "discord": {

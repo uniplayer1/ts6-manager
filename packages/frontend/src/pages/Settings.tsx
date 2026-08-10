@@ -845,6 +845,7 @@ function YouTubeTab() {
       </Card>
 
       <PlaylistImportLimitCard />
+      <YtProxyCard />
     </div>
   );
 }
@@ -887,6 +888,55 @@ function PlaylistImportLimitCard() {
         <p className="text-[10px] text-muted-foreground">{t('settings.youtube.playlistLimit.hint')}</p>
         <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
           {save.isPending ? t('settings.youtube.playlistLimit.saving') : t('settings.youtube.playlistLimit.save')}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── YouTube yt-dlp Egress Proxy Card ────────────────────────
+
+function YtProxyCard() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['yt-proxy-settings'], queryFn: settingsApi.getYtProxy });
+  const [proxyUrl, setProxyUrl] = useState('');
+
+  const [seededData, setSeededData] = useState<typeof data>(undefined);
+  if (data && data !== seededData) {
+    setSeededData(data);
+    setProxyUrl(data.proxyUrl || '');
+  }
+
+  const save = useMutation({
+    mutationFn: () => settingsApi.setYtProxy(proxyUrl.trim()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['yt-proxy-settings'] });
+      toast.success(t('settings.youtube.ytProxy.toastSaved'));
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || t('settings.youtube.ytProxy.toastSaveFailed')),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm font-medium">{t('settings.youtube.ytProxy.title')}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">{t('settings.youtube.ytProxy.description')}</p>
+        <div className="flex items-center gap-3">
+          <Label className="text-xs w-40">{t('settings.youtube.ytProxy.url')}</Label>
+          <Input
+            className="h-8 text-xs w-72"
+            type="text"
+            placeholder="http://gluetun:8888"
+            value={proxyUrl}
+            onChange={(e) => setProxyUrl(e.target.value)}
+          />
+        </div>
+        <p className="text-[10px] text-muted-foreground">{t('settings.youtube.ytProxy.hint')}</p>
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? t('settings.youtube.ytProxy.saving') : t('settings.youtube.ytProxy.save')}
         </Button>
       </CardContent>
     </Card>

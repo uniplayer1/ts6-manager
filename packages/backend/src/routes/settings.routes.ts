@@ -8,7 +8,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { AppError } from '../middleware/error-handler.js';
-import { setYtCookieFile, getYtCookieFile } from '../voice/audio/youtube.js';
+import { setYtCookieFile, getYtCookieFile, setYtProxyUrl, getYtProxyUrl } from '../voice/audio/youtube.js';
 import { MAX_PLAYLIST_IMPORT_KEY, parseImportCap } from '../utils/app-settings.js';
 
 const settingsRoutes: Router = Router();
@@ -74,6 +74,39 @@ settingsRoutes.delete('/yt-cookies', requireAdmin, (_req: Request, res: Response
     setYtCookieFile(null);
     console.log('[yt-dlp] Cookie file removed');
     res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// ─── yt-dlp egress proxy (gluetun / NordVPN) ──────────────────────
+// Optional HTTP/SOCKS proxy for yt-dlp downloads + streams (e.g.
+// http://gluetun:8888 to exit via NordVPN). Fixes YouTube 403/blocked on
+// datacenter IPs. Empty string disables it.
+const YT_PROXY_KEY = 'youtube.egressProxy';
+
+// GET /api/settings/yt-proxy — current proxy URL
+settingsRoutes.get('/yt-proxy', requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const row = await req.app.locals.prisma.appSetting.findUnique({ where: { key: YT_PROXY_KEY } });
+    res.json({ proxyUrl: row?.value || '' });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/settings/yt-proxy — persist + apply live (no restart)
+settingsRoutes.put('/yt-proxy', requireAdmin, async (req: Request, res: Response, next) => {
+  try {
+    const proxyUrl = (req.body?.proxyUrl || '').trim();
+    if (proxyUrl && !/^(https?|socks5|socks5h|socks4|http):\/\//i.test(proxyUrl)) {
+      throw new AppError(400, 'proxyUrl must be empty or start with http://, https://, socks4://, socks5:// or socks5h://');
+    }
+    const value = proxyUrl ? proxyUrl : '';
+    await req.app.locals.prisma.appSetting.upsert({
+      where: { key: YT_PROXY_KEY },
+      update: { value },
+      create: { key: YT_PROXY_KEY, value },
+    });
+    setYtProxyUrl(value || null);
+    console.log(value ? `[yt-dlp] egress proxy set to ${value}` : '[yt-dlp] egress proxy cleared');
+    res.json({ proxyUrl: value });
   } catch (err) { next(err); }
 });
 
