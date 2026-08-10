@@ -6,11 +6,12 @@ RUN go mod download
 COPY packages/sidecar/main.go .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /sidecar main.go
 
-FROM debian:bookworm-slim
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg ca-certificates && \
-    apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    useradd --system --no-create-home --shell /usr/sbin/nologin sidecar
+FROM alpine:3.21
+# ffmpeg from Alpine (>= 8) fixes a segfault in Debian bookworm's ffmpeg 5.1.9
+# that crashed on ANY HTTP-proxied input (video streams stayed black when routed
+# through gluetun/NordVPN). Alpine ships a current ffmpeg that proxies cleanly.
+RUN apk add --no-cache ffmpeg ca-certificates && \
+    adduser -S -D -H -s /sbin/nologin sidecar
 COPY --from=build /sidecar /usr/local/bin/sidecar
 USER sidecar
 # Inside a container the API must bind the bridge interface; never publish
