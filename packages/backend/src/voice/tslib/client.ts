@@ -120,6 +120,11 @@ export class Ts3Client extends EventEmitter {
   private channelMap = new Map<string, number>(); // channel_name → cid
   private currentChannelId = 0; // cid the bot currently sits in (for channel-scoped replies)
 
+  /** clids of other clients in the bot's current channel (excludes the bot itself). */
+  private channelMembers = new Set<number>();
+  /** clids that are ServerQuery clients (client_type=1) in the bot's channel. */
+  private queryMembers = new Set<number>();
+
   constructor() {
     super();
   }
@@ -134,6 +139,14 @@ export class Ts3Client extends EventEmitter {
 
   getChannelId(): number {
     return this.currentChannelId;
+  }
+
+  /**
+   * Number of real (non-query, non-bot) clients in the bot's current channel.
+   * Used by the auto-stop-when-empty feature.
+   */
+  getChannelUserCount(): number {
+    return this.channelMembers.size;
   }
 
   async connect(opts: Ts3ClientOptions): Promise<void> {
@@ -249,6 +262,9 @@ export class Ts3Client extends EventEmitter {
     this.socket?.close();
     this.socket = null;
     this.clientId = 0; // the server may reassign this clid to someone else
+    this.currentChannelId = 0;
+    this.channelMembers.clear();
+    this.queryMembers.clear();
     this.emit("disconnected");
   }
 
@@ -761,22 +777,64 @@ export class Ts3Client extends EventEmitter {
       case "channellistfinished":
         this.handleChannelListFinished();
         break;
-      case "notifyclientleftview":
-        if (
-          parsed.params.clid &&
-          parseInt(parsed.params.clid) === this.clientId
-        ) {
+      case "notifycliententerview": {
+        // A client entered the bot's current channel (or a channel it has
+        // visibility into). If they're in our channel, track them for the
+        // auto-stop-when-empty feature. Query clients (type 1) are tracked
+        // separately so they don't count as real listeners.
+        const clid = parseInt(parsed.params.clid || "0");
+        const cid = parseInt(parsed.params.ctid || parsed.params.cid || "0");
+        if (clid && clid !== this.clientId && cid === this.currentChannelId) {
+          if (String(parsed.params.client_type) === "1") this.queryMembers.add(clid);
+          else this.channelMembers.add(clid);
+        }
+        break;
+      }
+      case "notifyclientleftview": {
+        const clid = parseInt(parsed.params.clid || "0");
+        if (clid) {
+          this.channelMembers.delete(clid);
+          this.queryMembers.delete(clid);
+        }
+        if (clid && clid === this.clientId) {
           this.cleanup();
         }
         break;
+      }
+      case "notifyclientmoved": {
+        // Track the bot's own channel changes (e.g. the AFK-mover flow moves it
+        // via WebQuery — the bot's own connection needs to know where it now
+        // sits for both channel-scoped replies and occupancy tracking).
+        const clid = parseInt(parsed.params.clid || "0");
+        const toCid = parseInt(parsed.params.ctid || "0");
+        if (clid && clid === this.clientId) {
+          this.currentChannelId = toCid;
+          this.channelMembers.clear();
+          this.queryMembers.clear();
+          break;
+        }
+        // Track a client leaving/entering the bot's channel across moves.
+        const fromCid = parseInt(parsed.params.cfid || "0");
+        if (clid) {
+          const isQuery = String(parsed.params.client_type) === "1";
+          const target = isQuery ? this.queryMembers : this.channelMembers;
+          if (fromCid === this.currentChannelId) target.delete(clid);
+          if (toCid === this.currentChannelId) target.add(clid);
+        }
+        break;
+      }
       case "notifytextmessage":
         this.emit("textMessage", parsed.params);
         break;
       case "error": {
         this.emit("ts3error", parsed.params);
-        // Fatal TS3 errors: reject connect promise and disconnect immediately
+        // Only connection-level fatal TS3 errors reject the connect promise and
+        // disconnect immediately. 2568 ("insufficient client permissions") is an
+        // OPERATION-level error (e.g. moving into a channel you lack power for) —
+        // it must NOT drop the whole voice connection, or any permission hiccup
+        // would kill the bot's audio. 3329 = banned, 1796 = max clients reached.
         const errId = parseInt(parsed.params.id || "0");
-        if (errId === 2568 || errId === 3329 || errId === 1796) {
+        if (errId === 3329 || errId === 1796) {
           const errMsg = parsed.params.msg || "unknown error";
           this.emit("error", new Error(`TS3 error ${errId}: ${errMsg}`));
           this.disconnect();

@@ -106,6 +106,8 @@ export class VoiceBotManager extends EventEmitter {
         sidecarPort: (dbBot as any).sidecarPort ?? 9800,
         streamPreset: (dbBot as any).streamPreset ?? '720p',
         maxVideoDuration,
+        // Auto-stop when the channel is empty of real users. 0 disables.
+        autoStopEmptySeconds: parseInt(process.env.BOT_AUTO_STOP_EMPTY_SECONDS || '300', 10),
       };
 
       const bot = this.createBotInstance(config);
@@ -271,6 +273,7 @@ export class VoiceBotManager extends EventEmitter {
       sidecarBinaryPath: process.env.SIDECAR_BINARY_PATH,
       sidecarPort: 9800,
       streamPreset: '720p',
+      autoStopEmptySeconds: parseInt(process.env.BOT_AUTO_STOP_EMPTY_SECONDS || '300', 10),
     };
 
     const bot = this.createBotInstance(config);

@@ -82,6 +82,8 @@ export interface VoiceBotConfig {
   sidecarPort?: number;
   streamPreset?: string;
   maxVideoDuration?: number;  // seconds; 0 = unlimited
+  /** Stop playback after the channel has been empty of real users this long (s). 0 = disabled. */
+  autoStopEmptySeconds?: number;
 }
 
 export class VoiceBot extends EventEmitter {
@@ -94,6 +96,13 @@ export class VoiceBot extends EventEmitter {
   private identity: IdentityData | null = null;
   private playbackTimer: ReturnType<typeof setTimeout> | null = null;
   private _nowPlaying: QueueItem | null = null;
+
+  // Auto-stop-when-empty: stops playback after the channel has had no real
+  // users for `autoStopEmptySeconds` (0 disables). Tracks how long the channel
+  // has been empty and polls the bot's own connection (which subscribes to its
+  // channel, so it sees who is present).
+  private autoStopInterval: ReturnType<typeof setInterval> | null = null;
+  private emptySinceMs: number | null = null; // timestamp the channel went empty, or null if occupied
 
   // File playback state (streamed: ffmpeg decodes as we consume)
   private loopEpoch: number = 0;       // tick-loop lifetime (bumped by clearTimer)
@@ -176,9 +185,13 @@ export class VoiceBot extends EventEmitter {
       const id = parseInt(params.id || '0');
       const msg = params.msg || 'unknown error';
       this._lastError = `TS3 error ${id}: ${msg}`;
-      // Fatal errors that should not trigger reconnect
-      // 2568 = invalid password, 3329 = banned, 1796 = max clients reached
-      if (id === 2568 || id === 3329 || id === 1796) {
+      // Fatal errors that should NOT trigger reconnect (no point retrying):
+      //   3329 = banned, 1796 = max clients reached.
+      // NOTE: 2568 = "insufficient client permissions" — NOT fatal. It's usually
+      // a transient permission issue (e.g. moving into a channel the bot lacks
+      // the join/move power for) that a reconnect may resolve, and treating it
+      // as fatal permanently killed the bot on any permission hiccup.
+      if (id === 3329 || id === 1796) {
         this._status = 'error';
         this.emit('statusChange', this._status);
         this.emit('fatalError', this._lastError);
@@ -398,6 +411,7 @@ export class VoiceBot extends EventEmitter {
     this.emit('statusChange', this._status);
     this.emit('nowPlaying', item);
     this.updateNowPlayingNickname(item.title);
+    this.startAutoStopTimer();
 
     try {
       // Streamed playback: ffmpeg decodes the file as we consume it.
@@ -865,6 +879,7 @@ export class VoiceBot extends EventEmitter {
 
   private stopPlayback(): void {
     this.clearTimer();
+    this.stopAutoStopTimer();
     this.streamEpoch++; // orphan any pending stdout/close handlers
 
     // Kill decode/streaming FFmpeg if active
@@ -879,6 +894,48 @@ export class VoiceBot extends EventEmitter {
     this.fileDecodeDone = false;
     this.framesSent = 0;
     this.seekOffsetSec = 0;
+  }
+
+  // ─── Auto-stop when channel is empty ─────────────────────────
+  // Poll the bot's own connection (which subscribes to its channel) every few
+  // seconds while playing. If the channel has had no real users (excluding
+  // query clients and the bot itself) for `autoStopEmptySeconds`, stop
+  // playback. Resets the timer whenever someone is present.
+
+  private startAutoStopTimer(): void {
+    this.stopAutoStopTimer();
+    const grace = Number(this.config.autoStopEmptySeconds) || 0;
+    if (grace <= 0) return; // disabled
+    this.emptySinceMs = null;
+    this.autoStopInterval = setInterval(() => {
+      try {
+        const users = this.client.getChannelUserCount();
+        if (users > 0) {
+          this.emptySinceMs = null;
+          return;
+        }
+        if (this.emptySinceMs === null) {
+          this.emptySinceMs = Date.now();
+          return;
+        }
+        if (Date.now() - this.emptySinceMs >= grace * 1000) {
+          console.log(`[VoiceBot] Channel empty for ${grace}s — stopping playback (auto-stop)`);
+          this.stopAudio();
+          this.emit('autoStop', this.config.id);
+        }
+      } catch (err: any) {
+        // Non-fatal: don't let occupancy polling take down playback.
+        console.error(`[VoiceBot] auto-stop check failed: ${err.message}`);
+      }
+    }, 5000);
+  }
+
+  private stopAutoStopTimer(): void {
+    if (this.autoStopInterval) {
+      clearInterval(this.autoStopInterval);
+      this.autoStopInterval = null;
+    }
+    this.emptySinceMs = null;
   }
 
   // ─── Video Streaming ────────────────────────────────────────
