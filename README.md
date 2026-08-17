@@ -70,6 +70,8 @@ Run multiple music bots per server. Each bot has its own queue, volume control, 
 ### Bot Flow Engine
 Visual node-based editor for building automated server workflows. Drag triggers, conditions, and actions onto the canvas, connect them, and deploy. Supports TS3 events, cron schedules, webhooks, and chat commands as triggers.
 
+See the **[Bot Flows reference](docs/bot-flows.md)** for the full documentation: every trigger, the `{{event.*}}`/`var.*`/`temp.*`/`time.*`/`exec.*` variables, the condition expression language, all action types, the WebQuery command whitelist, and examples.
+
 ![Flow Editor](docs/flow-editor.png)
 
 ### Flow Templates
